@@ -2,6 +2,11 @@
   "solidity.compileUsingRemoteVersion": "v0.8.16",
   "solidity.packageDefaultDependenciesContractsDirectory": "src",
   "solidity.packageDefaultDependenciesDirectory": "lib",
-  "search.exclude": { "lib": true },
+  "search.exclude": {
+    "lib": true
+  },
+  "files.exclude": {
+    "lib": true,
+  },
   "solidity.linter": "",
 }
