@@ -3,8 +3,8 @@ pragma solidity ^0.8.4;
 
 import { Pod } from "./Pod.sol";
 import { ITornadoVault, Errors } from "./ITornadoVault.sol";
+import { AutomationBase } from "./utils/AutomationBase.sol";
 import { ERC20 } from "solmate/tokens/ERC20.sol";
-import { AutomationBase } from "lib/chainlink/contracts/src/v0.8/AutomationBase.sol";
 
 contract TornadoVault is ITornadoVault, AutomationBase {
     // Multi-transaction limit
@@ -38,26 +38,30 @@ contract TornadoVault is ITornadoVault, AutomationBase {
 
     function addTokenRule(
         address token,
-        uint256 min,
-        uint256 max
+        uint256 lowerBound,
+        uint256 upperBound
     ) external {
+        if (token == address(0)) revert Errors.ZeroAddress();
+        if (lowerBound > upperBound) revert Errors.InvalidBounds();
         if (_tokenIndex[token] != 0) revert Errors.TokenAlreadyAdded();
 
         _tokenIndex[token] = _tokenRules.length;
-        _tokenRules.push(TokenRule(token, false, min, max));
+        _tokenRules.push(TokenRule(token, false, lowerBound, upperBound));
 
-        emit AddTokenRule(token, min, max);
+        emit AddTokenRule(token, lowerBound, upperBound);
     }
 
     function updateTokenRule(
         address token,
         bool disabled,
-        uint256 min,
-        uint256 max
+        uint256 lowerBound,
+        uint256 upperBound
     ) external {
-        _tokenRules[_getTokenIndex(token)] = TokenRule(token, disabled, min, max);
+        if (lowerBound >= upperBound) revert Errors.InvalidBounds();
 
-        emit UpdateTokenRule(token, disabled, min, max);
+        _tokenRules[_getTokenIndex(token)] = TokenRule(token, disabled, lowerBound, upperBound);
+
+        emit UpdateTokenRule(token, disabled, lowerBound, upperBound);
     }
 
     function setLimit(uint256 limit_) external {
@@ -79,14 +83,15 @@ contract TornadoVault is ITornadoVault, AutomationBase {
 
             address token = _tokenRules[i].token;
             uint256 balance = ERC20(token).balanceOf(address(this));
-            if (balance > _tokenRules[i].max) {
+            if (balance > _tokenRules[i].upperBound) {
                 actionTokens[num++] = ActionToken(
                     token,
                     Action.REMOVE,
-                    (_tokenRules[i].max - _tokenRules[i].min) / 2
+                    (_tokenRules[i].upperBound - _tokenRules[i].lowerBound) / 2
                 );
             } else if (
-                balance < _tokenRules[i].min && _podNonce[token].left < _podNonce[token].right
+                balance < _tokenRules[i].lowerBound &&
+                _podNonce[token].left < _podNonce[token].right
             ) {
                 bytes32 salt = keccak256(abi.encodePacked(token, _podNonce[token].left));
                 address pod = _computePodAddress(salt);

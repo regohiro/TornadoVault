@@ -5,14 +5,16 @@ library Errors {
     error OnlyKeeper();
     error TokenAlreadyAdded();
     error TokenNotAdded();
+    error ZeroAddress();
+    error InvalidBounds();
 }
 
 interface ITornadoVault {
     struct TokenRule {
         address token;
         bool disabled;
-        uint256 min;
-        uint256 max;
+        uint256 lowerBound;
+        uint256 upperBound;
     }
 
     struct ActionToken {
@@ -26,8 +28,13 @@ interface ITornadoVault {
         uint128 left;
     }
 
-    event AddTokenRule(address token, uint256 min, uint256 max);
-    event UpdateTokenRule(address token, bool disabled, uint256 min, uint256 max);
+    event AddTokenRule(address indexed token, uint256 lowerBound, uint256 upperBound);
+    event UpdateTokenRule(
+        address indexed token,
+        bool disabled,
+        uint256 lowerBound,
+        uint256 upperBound
+    );
     event SetLimit(uint256 limit);
 
     enum Action {
