@@ -5,11 +5,6 @@ import "forge-std/Test.sol";
 import { TornadoVault, ITornadoVault } from "../src/TornadoVault.sol";
 import { MockERC20 } from "./mocks/MockERC20.sol";
 
-enum Action {
-    ADD,
-    REMOVE
-}
-
 contract TornadoVaultTest is Test, ITornadoVault {
     MockERC20 token;
     TornadoVault vault;
@@ -45,7 +40,20 @@ contract TornadoVaultTest is Test, ITornadoVault {
         bool disabled,
         uint256 lowerBound,
         uint256 upperBound
-    ) public {}
+    ) public {
+        vm.assume(tokenAddr != address(0));
+        vm.assume(lowerBound < upperBound);
+
+        vault.addTokenRule(tokenAddr, 1e18, 3e18);
+
+        vm.expectEmit(true, false, false, true);
+        emit UpdateTokenRule(tokenAddr, disabled, lowerBound, upperBound);
+        vault.updateTokenRule(tokenAddr, disabled, lowerBound, upperBound);
+        assertEq(
+            abi.encode(vault.tokenRule(tokenAddr)),
+            abi.encode(TokenRule(tokenAddr, disabled, lowerBound, upperBound))
+        );
+    }
 
     function testSetLimit(uint256 limit) public {
         vm.expectEmit(false, false, false, true);
@@ -54,34 +62,51 @@ contract TornadoVaultTest is Test, ITornadoVault {
         assertEq(vault.limit(), limit);
     }
 
-    // function setUp() public {
-    //     token = new MockERC20("Bitcoin", "BTC", 18);
-    //     vault = new TornadoVault();
-    //     vm.label(address(token), "token");
-    //     vm.label(address(vault), "vault");
+    function testCheckUpKeepNoTokenRule() public {
+        vm.prank(address(0), address(0));
+        (bool perform, ) = vault.checkUpKeep("0x");
+        assertFalse(perform);
+    }
 
-    //     vault.setToken(address(token));
-    //     vault.setBound(1_000_000e18, 3_000_000e18);
-    // }
+    function testCheckUpKeepNoBalance() public {
+        vault.addTokenRule(address(token), 1e18, 3e18);
+        vm.prank(address(0), address(0));
+        (bool perform, ) = vault.checkUpKeep("0x");
+        assertFalse(perform);
+    }
 
-    // function testCheckUpKeepNoBalance() public {
-    //     (bool perform, ) = vault.checkUpKeep("0x");
-    //     assertFalse(perform);
-    // }
+    function testCheckUpKeepOverUpperBound() public {
+        vault.addTokenRule(address(token), 1e18, 3e18);
 
-    // function testCheckUpKeepOverMax() public {
-    //     token.mint(address(vault), 5_000_000e18);
-    //     (bool perform, bytes memory performData) = vault.checkUpKeep("0x");
-    //     assertTrue(perform);
-    //     assertEq(performData, abi.encode(Action.REMOVE));
-    // }
+        token.mint(address(vault), 5e18);
 
-    // function testPerformUpKeepOverMax() public {
-    //     token.mint(address(vault), 5_000_000e18);
-    //     (bool perform, bytes memory performData) = vault.checkUpKeep("0x");
-    //     vault.performUpkeep(performData);
+        vm.prank(address(0), address(0));
+        (bool perform, bytes memory performData) = vault.checkUpKeep("0x");
 
-    //     address pod = vault.pods(0);
-    //     assertEq(token.balanceOf(pod), 1_000_000e18);
-    // }
+        ActionToken[] memory actionTokens = new ActionToken[](1);
+        actionTokens[0] = ActionToken(address(token), Action.REMOVE, 1e18);
+        assertTrue(perform);
+        assertEq(performData, abi.encode(actionTokens));
+    }
+
+    function testPerformUpKeepOverUpperBound(
+        uint256 amount,
+        uint256 lowerBound,
+        uint256 upperBound
+    ) public {
+        vm.assume(amount > upperBound);
+        vm.assume(lowerBound < upperBound);
+
+        vault.addTokenRule(address(token), lowerBound, upperBound);
+        token.mint(address(vault), amount);
+
+        vm.prank(address(0), address(0));
+        (bool perform, bytes memory performData) = vault.checkUpKeep("0x");
+
+        vm.prank(keeper, keeper);
+        vault.performUpkeep(performData);
+
+        // More tests...
+        assertTrue(perform);
+    }
 }
