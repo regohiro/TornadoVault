@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.4;
+pragma solidity ^0.8.16;
 
 import { Pod } from "./Pod.sol";
 import { ITornadoVault, Errors } from "./ITornadoVault.sol";
@@ -116,7 +116,7 @@ contract TornadoVault is ITornadoVault, AutomationBase {
             address token = actionTokens[i].token;
             if (actionTokens[i].action == Action.REMOVE) {
                 bytes32 salt = keccak256(abi.encodePacked(token, _podNonce[token].right++));
-                address pod = address(new Pod{ salt: salt }(address(this), token));
+                address pod = address(new Pod{ salt: salt }(token));
 
                 ERC20(token).transfer(pod, actionTokens[i].amount);
             } else if (actionTokens[i].action == Action.ADD) {
