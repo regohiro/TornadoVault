@@ -9,3 +9,6 @@ out/
 
 # Dependencies
 node_modules/
+
+# Others
+z/
