@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.16;
 
-import { Pod } from "./Pod.sol";
 import { ITornadoVault, Errors } from "./ITornadoVault.sol";
 import { AutomationBase } from "./utils/AutomationBase.sol";
 import { ERC20 } from "solmate/tokens/ERC20.sol";
@@ -116,7 +115,18 @@ contract TornadoVault is ITornadoVault, AutomationBase {
             address token = actionTokens[i].token;
             if (actionTokens[i].action == Action.REMOVE) {
                 bytes32 salt = keccak256(abi.encodePacked(token, _podNonce[token].right++));
-                address pod = address(new Pod{ salt: salt }(token));
+                bytes memory bytecode = abi.encodePacked(
+                    _podCreationCode(),
+                    abi.encode(address(token))
+                );
+                address pod;
+
+                assembly {
+                    pod := create2(0, add(bytecode, 0x20), mload(bytecode), salt)
+                    if iszero(pod) {
+                        revert(0, 0)
+                    }
+                }
 
                 ERC20(token).transfer(pod, actionTokens[i].amount);
             } else if (actionTokens[i].action == Action.ADD) {
@@ -128,16 +138,21 @@ contract TornadoVault is ITornadoVault, AutomationBase {
         }
     }
 
+    function _getTokenIndex(address token) private view returns (uint256 index) {
+        if ((index = _tokenIndex[token]) == 0) revert Errors.TokenNotAdded();
+    }
+
+    function _podCreationCode() private pure returns (bytes memory) {
+        return
+            hex"63095ea7b3600052336020526000196040526020803803606039602060006060601c826060515af161003057600080fd5b600080603a3d393df3";
+    }
+
     function _computePodAddress(bytes32 salt) private view returns (address) {
         bytes32 hash = keccak256(
-            abi.encodePacked(bytes1(0xff), address(this), salt, keccak256(type(Pod).creationCode))
+            abi.encodePacked(bytes1(0xff), address(this), salt, keccak256(_podCreationCode()))
         );
 
         return address(uint160(uint256(hash)));
-    }
-
-    function _getTokenIndex(address token) private view returns (uint256 index) {
-        if ((index = _tokenIndex[token]) == 0) revert Errors.TokenNotAdded();
     }
 
     modifier onlyKeeper() {
