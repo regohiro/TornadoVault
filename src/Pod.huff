@@ -17,7 +17,7 @@
 
     // Copy and store token address into memory at 0x60
     0x20                        // [size] - byte size to copy
-    0x20 codesize sub           // [offset, size] - offset in the code to copy from
+    dup1 codesize sub           // [offset, size] - offset in the code to copy from
     0x60                        // [mem, offset, size] - offset in memory to copy to
     codecopy                    // []
 
@@ -26,7 +26,7 @@
     0x00                        // [retOffset, retSize]
     0x60                        // [argSize, retOffset, retSize]
     0x1C                        // [argOffset, argSize, retOffset, retSize]
-    0x00                        // [value, argOffset, argSize, retOffset, retSize]
+    dup3                        // [value, argOffset, argSize, retOffset, retSize]
     0x60 mload                  // [tokenAddr, value, argOffset, argSize, retOffset, retSize]
     gas                         // [gas, tokenAddr, value, argOffset, argSize, retOffset, retSize]
     call                        // [success]
@@ -35,15 +35,6 @@
     cont jumpi
     0x00 dup1 revert
     cont:
-
-    // Check if returned true
-    0x00 mload 0x01             // [true, response]
-    eq safe jumpi               
-    0x00 dup1 revert
-    safe:
-
-    // End
-    stop
 }
 
 #define macro MAIN() = {}
