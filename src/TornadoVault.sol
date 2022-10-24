@@ -4,8 +4,13 @@ pragma solidity ^0.8.16;
 import { ITornadoVault, Errors } from "./ITornadoVault.sol";
 import { AutomationBase } from "./utils/AutomationBase.sol";
 import { ERC20 } from "solmate/tokens/ERC20.sol";
+import { SafeTransferLib } from "solmate/utils/SafeTransferLib.sol";
 
+/// @title TornadoVault
+/// @author regohiro
 contract TornadoVault is ITornadoVault, AutomationBase {
+    using SafeTransferLib for ERC20;
+
     // Multi-transaction limit
     uint256 public limit;
     // Chainlink keeper address
@@ -18,23 +23,37 @@ contract TornadoVault is ITornadoVault, AutomationBase {
     // Left, right nonce of token pods
     mapping(address => PodNonce) private _podNonce;
 
+    /// @notice Constructor
+    /// @param limit_ Upper limit of token balance to update
+    /// @param keeper_ Chainlink keeper address
     constructor(uint256 limit_, address keeper_) {
         limit = limit_;
         keeper = keeper_;
 
+        // Skip the 0th slot of _tokenIndex array
         assembly {
             sstore(_tokenRules.slot, 1)
         }
     }
 
+    /// @notice View function to return token rule
+    /// @param token Address of the token
+    /// @return Token rule struct
     function tokenRule(address token) external view returns (TokenRule memory) {
         return _tokenRules[_getTokenIndex(token)];
     }
 
+    /// @notice View function to return left and right nonces of token pods
+    /// @param token Address of the token
+    /// @return (left nonce, right nonce)
     function nonceOf(address token) external view returns (uint128, uint128) {
         return (_podNonce[token].left, _podNonce[token].right);
     }
 
+    /// @notice Add new token rule
+    /// @param token Address of the token
+    /// @param lowerBound .
+    /// @param upperBound .
     function addTokenRule(
         address token,
         uint256 lowerBound,
@@ -50,6 +69,11 @@ contract TornadoVault is ITornadoVault, AutomationBase {
         emit AddTokenRule(token, lowerBound, upperBound);
     }
 
+    /// @notice Update existing token rule
+    /// @param token Address of the token
+    /// @param disabled .
+    /// @param lowerBound .
+    /// @param upperBound .
     function updateTokenRule(
         address token,
         bool disabled,
@@ -63,6 +87,8 @@ contract TornadoVault is ITornadoVault, AutomationBase {
         emit UpdateTokenRule(token, disabled, lowerBound, upperBound);
     }
 
+    /// @notice Update limit
+    /// @param limit_ New limit
     function setLimit(uint256 limit_) external {
         limit = limit_;
 
@@ -85,16 +111,20 @@ contract TornadoVault is ITornadoVault, AutomationBase {
             if (balance > _tokenRules[i].upperBound) {
                 actionTokens[num++] = ActionToken(
                     token,
-                    Action.REMOVE,
+                    Action.UNLOAD,
                     (_tokenRules[i].upperBound - _tokenRules[i].lowerBound) / 2
                 );
             } else if (
                 balance < _tokenRules[i].lowerBound &&
                 _podNonce[token].left < _podNonce[token].right
             ) {
-                bytes32 salt = keccak256(abi.encodePacked(token, _podNonce[token].left));
-                address pod = _computePodAddress(salt);
-                actionTokens[num++] = ActionToken(token, Action.ADD, ERC20(token).balanceOf(pod));
+                uint256 salt = _podNonce[token].left;
+                bytes memory bytecode = abi.encodePacked(
+                    _podCreationCode(),
+                    abi.encode(address(token))
+                );
+                address pod = _computeAddress(bytecode, salt);
+                actionTokens[num++] = ActionToken(token, Action.LOAD, ERC20(token).balanceOf(pod));
             }
         }
 
@@ -113,13 +143,13 @@ contract TornadoVault is ITornadoVault, AutomationBase {
 
         for (uint256 i = 0; i < actionTokens.length; i++) {
             address token = actionTokens[i].token;
-            if (actionTokens[i].action == Action.REMOVE) {
-                bytes32 salt = keccak256(abi.encodePacked(token, _podNonce[token].right++));
+            address pod;
+            if (actionTokens[i].action == Action.UNLOAD) {
+                uint256 salt = _podNonce[token].right++;
                 bytes memory bytecode = abi.encodePacked(
                     _podCreationCode(),
                     abi.encode(address(token))
                 );
-                address pod;
 
                 assembly {
                     pod := create2(0, add(bytecode, 0x20), mload(bytecode), salt)
@@ -128,13 +158,18 @@ contract TornadoVault is ITornadoVault, AutomationBase {
                     }
                 }
 
-                ERC20(token).transfer(pod, actionTokens[i].amount);
-            } else if (actionTokens[i].action == Action.ADD) {
-                bytes32 salt = keccak256(abi.encodePacked(token, _podNonce[token].left++));
-                address pod = _computePodAddress(salt);
+                ERC20(token).safeTransfer(pod, actionTokens[i].amount);
+            } else if (actionTokens[i].action == Action.LOAD) {
+                bytes memory bytecode = abi.encodePacked(
+                    _podCreationCode(),
+                    abi.encode(address(token))
+                );
+                pod = _computeAddress(bytecode, _podNonce[token].left++);
 
-                ERC20(token).transferFrom(pod, address(this), actionTokens[i].amount);
+                ERC20(token).safeTransferFrom(pod, address(this), actionTokens[i].amount);
             }
+
+            emit UpdateVaultBalance(token, actionTokens[i].action, pod, actionTokens[i].amount);
         }
     }
 
@@ -147,12 +182,12 @@ contract TornadoVault is ITornadoVault, AutomationBase {
             hex"63095ea7b3600052336020526000196040526020803803606039602060006060601c826060515af161003057600080fd5b600080603a3d393df3";
     }
 
-    function _computePodAddress(bytes32 salt) private view returns (address) {
+    function _computeAddress(bytes memory bytecode, uint256 salt) private view returns (address) {
         bytes32 hash = keccak256(
-            abi.encodePacked(bytes1(0xff), address(this), salt, keccak256(_podCreationCode()))
+            abi.encodePacked(bytes1(0xff), address(this), salt, keccak256(bytecode))
         );
 
-        return address(uint160(uint256(hash)));
+        return address(uint160(uint256(hash)) & type(uint160).max);
     }
 
     modifier onlyKeeper() {
