@@ -11,4 +11,5 @@ out/
 node_modules/
 
 # Others
+*.DS_Store
 z/
