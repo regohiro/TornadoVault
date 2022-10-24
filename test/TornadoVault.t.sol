@@ -84,7 +84,7 @@ contract TornadoVaultTest is Test, ITornadoVault {
         (bool perform, bytes memory performData) = vault.checkUpKeep("0x");
 
         ActionToken[] memory actionTokens = new ActionToken[](1);
-        actionTokens[0] = ActionToken(address(token), Action.REMOVE, 1e18);
+        actionTokens[0] = ActionToken(address(token), Action.UNLOAD, 1e18);
         assertTrue(perform);
         assertEq(performData, abi.encode(actionTokens));
     }
@@ -103,10 +103,87 @@ contract TornadoVaultTest is Test, ITornadoVault {
         vm.prank(address(0), address(0));
         (bool perform, bytes memory performData) = vault.checkUpKeep("0x");
 
+        bytes memory bytecode = abi.encodePacked(_podCreationCode(), abi.encode(address(token)));
+        address pod = _computeAddress(bytecode, 0);
+
+        vm.expectEmit(true, true, false, true);
+        emit UpdateVaultBalance(address(token), Action.UNLOAD, pod, (upperBound - lowerBound) / 2);
         vm.prank(keeper, keeper);
         vault.performUpkeep(performData);
 
-        // More tests...
         assertTrue(perform);
+        assertEq(token.balanceOf(pod), (upperBound - lowerBound) / 2);
+        assertEq(token.balanceOf(address(vault)), amount - (upperBound - lowerBound) / 2);
+    }
+
+    function testPerformUpKeepBelowLowerBound(
+        uint256 amount,
+        uint128 lowerBound,
+        uint256 upperBound
+    ) public {
+        vm.assume(amount > upperBound);
+        vm.assume(lowerBound > 0 && lowerBound < upperBound);
+
+        vault.addTokenRule(address(token), lowerBound, upperBound);
+        token.mint(address(vault), amount);
+
+        // Unload
+        {
+            vm.prank(address(0), address(0));
+            (, bytes memory performData) = vault.checkUpKeep("0x");
+
+            vm.prank(keeper, keeper);
+            vault.performUpkeep(performData);
+        }
+
+        // Burn tokens from vault
+        {
+            token.set(address(vault), lowerBound - 1);
+        }
+
+        // Test load
+        {
+            vm.prank(address(0), address(0));
+            (bool perform, bytes memory performData) = vault.checkUpKeep("0x");
+
+            bytes memory bytecode = abi.encodePacked(
+                _podCreationCode(),
+                abi.encode(address(token))
+            );
+            address pod = _computeAddress(bytecode, 0);
+
+            vm.expectEmit(true, true, false, true);
+            emit UpdateVaultBalance(
+                address(token),
+                Action.LOAD,
+                pod,
+                (upperBound - lowerBound) / 2
+            );
+            vm.prank(keeper, keeper);
+            vault.performUpkeep(performData);
+
+            assertTrue(perform);
+            assertEq(token.balanceOf(pod), 0);
+            assertEq(
+                token.balanceOf(address(vault)),
+                (lowerBound - 1) + (upperBound - lowerBound) / 2
+            );
+        }
+    }
+
+    function _computeAddress(bytes memory bytecode, uint256 salt) private view returns (address) {
+        bytes32 hash = keccak256(
+            abi.encodePacked(bytes1(0xff), address(vault), salt, keccak256(bytecode))
+        );
+
+        return address(uint160(uint256(hash)));
+    }
+
+    function _podCreationCode() private returns (bytes memory) {
+        string[] memory cmds = new string[](3);
+        cmds[0] = "huffc";
+        cmds[1] = "src/Pod.huff";
+        cmds[2] = "-b";
+        return vm.ffi(cmds);
     }
 }
