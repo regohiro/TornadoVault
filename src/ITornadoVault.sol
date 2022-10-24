@@ -36,9 +36,15 @@ interface ITornadoVault {
         uint256 upperBound
     );
     event SetLimit(uint256 limit);
+    event UpdateVaultBalance(
+        address indexed token,
+        Action indexed action,
+        address pod,
+        uint256 amount
+    );
 
     enum Action {
-        ADD,
-        REMOVE
+        LOAD,
+        UNLOAD
     }
 }
