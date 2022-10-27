@@ -64,14 +64,14 @@ contract TornadoVaultTest is Test, ITornadoVault {
 
     function testCheckUpKeepNoTokenRule() public {
         vm.prank(address(0), address(0));
-        (bool perform, ) = vault.checkUpKeep("0x");
+        (bool perform, ) = vault.checkUpkeep("0x");
         assertFalse(perform);
     }
 
     function testCheckUpKeepNoBalance() public {
         vault.addTokenRule(address(token), 1e18, 3e18);
         vm.prank(address(0), address(0));
-        (bool perform, ) = vault.checkUpKeep("0x");
+        (bool perform, ) = vault.checkUpkeep("0x");
         assertFalse(perform);
     }
 
@@ -81,7 +81,7 @@ contract TornadoVaultTest is Test, ITornadoVault {
         token.mint(address(vault), 5e18);
 
         vm.prank(address(0), address(0));
-        (bool perform, bytes memory performData) = vault.checkUpKeep("0x");
+        (bool perform, bytes memory performData) = vault.checkUpkeep("0x");
 
         ActionToken[] memory actionTokens = new ActionToken[](1);
         actionTokens[0] = ActionToken(address(token), Action.UNLOAD, 1e18);
@@ -101,7 +101,7 @@ contract TornadoVaultTest is Test, ITornadoVault {
         token.mint(address(vault), amount);
 
         vm.prank(address(0), address(0));
-        (bool perform, bytes memory performData) = vault.checkUpKeep("0x");
+        (bool perform, bytes memory performData) = vault.checkUpkeep("0x");
 
         bytes memory bytecode = abi.encodePacked(_podCreationCode(), abi.encode(address(token)));
         address pod = _computeAddress(bytecode, 0);
@@ -130,7 +130,7 @@ contract TornadoVaultTest is Test, ITornadoVault {
         // Unload
         {
             vm.prank(address(0), address(0));
-            (, bytes memory performData) = vault.checkUpKeep("0x");
+            (, bytes memory performData) = vault.checkUpkeep("0x");
 
             vm.prank(keeper, keeper);
             vault.performUpkeep(performData);
@@ -144,7 +144,7 @@ contract TornadoVaultTest is Test, ITornadoVault {
         // Test load
         {
             vm.prank(address(0), address(0));
-            (bool perform, bytes memory performData) = vault.checkUpKeep("0x");
+            (bool perform, bytes memory performData) = vault.checkUpkeep("0x");
 
             bytes memory bytecode = abi.encodePacked(
                 _podCreationCode(),

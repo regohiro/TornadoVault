@@ -95,7 +95,7 @@ contract TornadoVault is ITornadoVault, AutomationBase {
         emit SetLimit(limit);
     }
 
-    function checkUpKeep(bytes calldata) external view cannotExecute returns (bool, bytes memory) {
+    function checkUpkeep(bytes calldata) external view cannotExecute returns (bool, bytes memory) {
         uint256 len = _tokenRules.length;
         uint256 num = 0;
 
